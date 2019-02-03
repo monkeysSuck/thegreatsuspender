@@ -3,7 +3,7 @@
   'use strict';
 
   try {
-    chrome.extension.getBackgroundPage().tgs.setViewGlobals(global, 'permissions');
+    chrome.extension.getBackgroundPage().tgs.setViewGlobals(global);
   } catch (e) {
     window.setTimeout(() => window.location.reload(), 1000);
     return;
@@ -16,8 +16,12 @@
         document.getElementById('exportBackupBtn').style.display = 'none';
       });
     };
-    document.getElementById('setFilePermissiosnBtn').onclick = async function(e) {
-      await gsChrome.tabsCreate({ url: 'chrome://extensions?id=' + chrome.runtime.id });
+    document.getElementById('setFilePermissiosnBtn').onclick = async function(
+      e
+    ) {
+      await gsChrome.tabsCreate({
+        url: 'chrome://extensions?id=' + chrome.runtime.id,
+      });
     };
   });
   gsAnalytics.reportPageView('permissions.html');

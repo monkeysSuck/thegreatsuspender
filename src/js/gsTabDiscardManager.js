@@ -19,14 +19,30 @@ var gsTabDiscardManager = (function() {
         exceptionFn: handleDiscardException,
       };
       discardQueue = GsTabQueue(QUEUE_ID, queueProps);
+      gsUtils.log('gsTabDiscardManager', 'init successful');
       resolve();
     });
   }
 
+  // Discard all suspended tabs currently open during extension initialisation
+  async function performInitialisationTabDiscards(tabs) {
+    const tabDiscardPromises = [];
+    for (const tab of tabs) {
+      if (!gsUtils.isSuspendedTab(tab) || gsUtils.isDiscardedTab(tab)) {
+        continue;
+      }
+      tabDiscardPromises.push(queueTabForDiscardAsPromise(tab, {}, 0));
+    }
+    const results = await Promise.all(tabDiscardPromises);
+    return results;
+  }
+
   function queueTabForDiscard(tab, executionProps, processingDelay) {
-    queueTabForDiscardAsPromise(tab, executionProps, processingDelay).catch(e => {
-      gsUtils.log(tab.id, QUEUE_ID, e);
-    });
+    queueTabForDiscardAsPromise(tab, executionProps, processingDelay).catch(
+      e => {
+        gsUtils.log(tab.id, QUEUE_ID, e);
+      }
+    );
   }
 
   function queueTabForDiscardAsPromise(tab, executionProps, processingDelay) {
@@ -104,7 +120,7 @@ var gsTabDiscardManager = (function() {
       gsUtils.shouldSuspendDiscardedTabs() &&
       gsTabSuspendManager.checkTabEligibilityForSuspension(tab, 3)
     ) {
-      tgs.setSuspendedTabPropForTabId(tab.id, tgs.STP_SUSPEND_REASON, 3);
+      tgs.setTabStatePropForTabId(tab.id, tgs.STATE_SUSPEND_REASON, 3);
       const suspendedUrl = gsUtils.generateSuspendedUrl(tab.url, tab.title, 0);
       gsUtils.log(tab.id, QUEUE_ID, 'Suspending discarded unsuspended tab');
 
@@ -116,6 +132,7 @@ var gsTabDiscardManager = (function() {
 
   return {
     initAsPromised,
+    performInitialisationTabDiscards,
     queueTabForDiscard,
     queueTabForDiscardAsPromise,
     unqueueTabForDiscard,

@@ -2,7 +2,7 @@
 (function(global) {
   'use strict';
 
-  chrome.extension.getBackgroundPage().tgs.setViewGlobals(global, 'popup');
+  chrome.extension.getBackgroundPage().tgs.setViewGlobals(global);
 
   var globalActionElListener;
 
@@ -187,7 +187,7 @@
         chrome.i18n.getMessage('js_popup_blockedFile') +
         " <a href='#'>" +
         chrome.i18n.getMessage('js_popup_blockedFile_enable') +
-        "</a>";
+        '</a>';
       //    statusIconClass = 'fa fa-exclamation-triangle';
     } else if (
       status === gsUtils.STATUS_LOADING ||
@@ -227,16 +227,16 @@
         status === gsUtils.STATUS_NORMAL ||
         status === gsUtils.STATUS_ACTIVE
       ) {
-        tgsHanderFunc = tgs.toggleTempWhitelistStateOfHighlightedTab;
+        tgsHanderFunc = tgs.requestToggleTempWhitelistStateOfHighlightedTab;
       } else if (status === gsUtils.STATUS_SUSPENDED) {
-        tgsHanderFunc = tgs.toggleTempWhitelistStateOfHighlightedTab;
+        tgsHanderFunc = tgs.requestToggleTempWhitelistStateOfHighlightedTab;
       } else if (status === gsUtils.STATUS_WHITELISTED) {
         tgsHanderFunc = tgs.unwhitelistHighlightedTab;
       } else if (
         status === gsUtils.STATUS_FORMINPUT ||
         status === gsUtils.STATUS_TEMPWHITELIST
       ) {
-        tgsHanderFunc = tgs.toggleTempWhitelistStateOfHighlightedTab;
+        tgsHanderFunc = tgs.requestToggleTempWhitelistStateOfHighlightedTab;
       } else if (status === gsUtils.STATUS_BLOCKED_FILE) {
         tgsHanderFunc = tgs.promptForFilePermissions;
       }

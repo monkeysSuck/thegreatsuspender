@@ -1,4 +1,4 @@
-/*global chrome, localStorage, gsStorage, gsChrome, gsMessages, gsSession, gsTabSuspendManager, gsTabDiscardManager, tgs */
+/*global chrome, localStorage, gsStorage, gsChrome, gsMessages, gsSession, gsTabSuspendManager, gsTabDiscardManager, gsSuspendedTab, gsFavicon, tgs */
 'use strict';
 
 var debugInfo = false;
@@ -45,7 +45,8 @@ var gsUtils = {
     if (debugError) {
       args = args || [];
       const ignores = ['Error', 'gsUtils', 'gsMessages'];
-      const errorLine = this.getStackTrace()
+      const errorLine = gsUtils
+        .getStackTrace()
         .split('\n')
         .filter(o => !ignores.find(p => o.indexOf(p) >= 0))
         .join('\n');
@@ -68,6 +69,10 @@ var gsUtils = {
     }
   },
   error: function(id, errorObj, ...args) {
+    if (errorObj === undefined) {
+      errorObj = id;
+      id = '?';
+    }
     //NOTE: errorObj may be just a string :/
     if (debugError) {
       const stackTrace = errorObj.hasOwnProperty('stack')
@@ -86,7 +91,7 @@ var gsUtils = {
     } else {
       // const logString = errorObj.hasOwnProperty('stack')
       //   ? errorObj.stack
-      //   : `${JSON.stringify(errorObj)}\n${this.getStackTrace()}`;
+      //   : `${JSON.stringify(errorObj)}\n${gsUtils.getStackTrace()}`;
       // gsAnalytics.reportException(logString, false);
     }
   },
@@ -128,7 +133,7 @@ var gsUtils = {
   isSpecialTab: function(tab) {
     var url = tab.url;
 
-    if (this.isSuspendedUrl(url, false)) {
+    if (gsUtils.isSuspendedUrl(url, true)) {
       return false;
     }
     // Careful, suspended urls start with "chrome-extension://"
@@ -163,7 +168,7 @@ var gsUtils = {
   isInternalTab: function(tab) {
     var isLocalExtensionPage =
       tab.url.indexOf('chrome-extension://' + chrome.runtime.id) === 0;
-    return isLocalExtensionPage && !gsUtils.isSuspendedUrl(tab.url, true);
+    return isLocalExtensionPage && !gsUtils.isSuspendedUrl(tab.url);
   },
 
   isProtectedPinnedTab: function(tab) {
@@ -185,19 +190,20 @@ var gsUtils = {
     );
   },
 
+  // Note: Normal tabs may be in a discarded state
   isNormalTab: function(tab) {
-    return !gsUtils.isSpecialTab(tab) && !gsUtils.isSuspendedTab(tab);
+    return !gsUtils.isSpecialTab(tab) && !gsUtils.isSuspendedTab(tab, true);
   },
 
-  isSuspendedTab: function(tab, strictMatching) {
-    return this.isSuspendedUrl(tab.url, strictMatching);
+  isSuspendedTab: function(tab, looseMatching) {
+    return gsUtils.isSuspendedUrl(tab.url, looseMatching);
   },
 
-  isSuspendedUrl: function(url, strictMatching) {
-    if (strictMatching) {
-      return url.indexOf(chrome.extension.getURL('suspended.html')) === 0;
-    } else {
+  isSuspendedUrl: function(url, looseMatching) {
+    if (looseMatching) {
       return url.indexOf('suspended.html') > 0;
+    } else {
+      return url.indexOf(chrome.extension.getURL('suspended.html')) === 0;
     }
   },
 
@@ -272,7 +278,7 @@ var gsUtils = {
       whitelisted;
 
     whitelisted = whitelistItems.some(function(item) {
-      return this.testForMatch(item, url);
+      return gsUtils.testForMatch(item, url);
     }, this);
     return whitelisted;
   },
@@ -283,7 +289,7 @@ var gsUtils = {
       i;
 
     for (i = whitelistItems.length - 1; i >= 0; i--) {
-      if (this.testForMatch(whitelistItems[i], url)) {
+      if (gsUtils.testForMatch(whitelistItems[i], url)) {
         whitelistItems.splice(i, 1);
       }
     }
@@ -325,7 +331,7 @@ var gsUtils = {
   saveToWhitelist: function(newString) {
     var oldWhitelistString = gsStorage.getOption(gsStorage.WHITELIST) || '';
     var newWhitelistString = oldWhitelistString + '\n' + newString;
-    newWhitelistString = this.cleanupWhitelist(newWhitelistString);
+    newWhitelistString = gsUtils.cleanupWhitelist(newWhitelistString);
     gsStorage.setOptionAndSync(gsStorage.WHITELIST, newWhitelistString);
 
     var key = gsStorage.WHITELIST;
@@ -400,10 +406,11 @@ var gsUtils = {
   },
 
   generateSuspendedUrl: function(url, title, scrollPos) {
+    let encodedTitle = gsUtils.encodeString(title);
     var args =
       '#' +
       'ttl=' +
-      encodeURIComponent(title) +
+      encodedTitle +
       '&' +
       'pos=' +
       (scrollPos || '0') +
@@ -489,23 +496,23 @@ var gsUtils = {
     return valuesByKey[key] || false;
   },
   getSuspendedTitle: function(urlStr) {
-    return decodeURIComponent(this.getHashVariable('ttl', urlStr) || '');
+    return gsUtils.decodeString(gsUtils.getHashVariable('ttl', urlStr) || '');
   },
   getSuspendedScrollPosition: function(urlStr) {
-    return decodeURIComponent(this.getHashVariable('pos', urlStr) || '');
+    return gsUtils.decodeString(gsUtils.getHashVariable('pos', urlStr) || '');
   },
   getOriginalUrl: function(urlStr) {
     return (
-      this.getHashVariable('uri', urlStr) ||
-      decodeURIComponent(this.getHashVariable('url', urlStr) || '')
+      gsUtils.getHashVariable('uri', urlStr) ||
+      gsUtils.decodeString(gsUtils.getHashVariable('url', urlStr) || '')
     );
   },
   getCleanTabTitle(tab) {
-    let cleanedTitle = decodeURIComponent(tab.title);
+    let cleanedTitle = gsUtils.decodeString(tab.title);
     if (
       !cleanedTitle ||
       cleanedTitle === '' ||
-      cleanedTitle === decodeURIComponent(tab.url) ||
+      cleanedTitle === gsUtils.decodeString(tab.url) ||
       cleanedTitle === 'Suspended Tab'
     ) {
       if (gsUtils.isSuspendedTab(tab)) {
@@ -517,11 +524,25 @@ var gsUtils = {
     }
     return cleanedTitle;
   },
+  decodeString(string) {
+    try {
+      return decodeURIComponent(string);
+    } catch (e) {
+      return string;
+    }
+  },
+  encodeString(string) {
+    try {
+      return encodeURIComponent(string);
+    } catch (e) {
+      return string;
+    }
+  },
 
   getSuspendedTabCount: async function() {
     const currentTabs = await gsChrome.tabsQuery();
     const currentSuspendedTabs = currentTabs.filter(tab =>
-      gsUtils.isSuspendedTab(tab, true)
+      gsUtils.isSuspendedTab(tab)
     );
     return currentSuspendedTabs.length;
   },
@@ -555,9 +576,9 @@ var gsUtils = {
     var expiredTabs = [];
     chrome.tabs.query({}, tabs => {
       for (const tab of tabs) {
-        const timerDetails = tgs.getUnsuspendedTabPropForTabId(
+        const timerDetails = tgs.getTabStatePropForTabId(
           tab.id,
-          tgs.UTP_TIMER_DETAILS
+          tgs.STATE_TIMER_DETAILS
         );
         if (
           timerDetails &&
@@ -595,17 +616,35 @@ var gsUtils = {
           }
 
           //if theme or screenshot preferences have changed then refresh suspended tabs
-          var payload = {};
-          if (changedSettingKeys.includes(gsStorage.THEME)) {
-            payload.theme = gsStorage.getOption(gsStorage.THEME);
-          }
-          if (changedSettingKeys.includes(gsStorage.SCREEN_CAPTURE)) {
-            payload.previewMode = gsStorage.getOption(gsStorage.SCREEN_CAPTURE);
-          }
-          if (Object.keys(payload).length > 0) {
+          const updateTheme = changedSettingKeys.includes(gsStorage.THEME);
+          const updatePreviewMode = changedSettingKeys.includes(
+            gsStorage.SCREEN_CAPTURE
+          );
+          if (updateTheme || updatePreviewMode) {
             const suspendedView = tgs.getInternalViewByTabId(tab.id);
             if (suspendedView) {
-              suspendedView.exports.initTabProps(payload); //async. unhandled promise
+              if (updateTheme) {
+                const theme = gsStorage.getOption(gsStorage.THEME);
+                gsFavicon.getFaviconMetaData(tab).then(faviconMeta => {
+                  const isLowContrastFavicon = faviconMeta.isDark || false;
+                  gsSuspendedTab.updateTheme(
+                    suspendedView,
+                    tab,
+                    theme,
+                    isLowContrastFavicon
+                  );
+                });
+              }
+              if (updatePreviewMode) {
+                const previewMode = gsStorage.getOption(
+                  gsStorage.SCREEN_CAPTURE
+                );
+                gsSuspendedTab.updatePreviewMode(
+                  suspendedView,
+                  tab,
+                  previewMode
+                ); // async. unhandled promise.
+              }
             }
           }
 
@@ -621,6 +660,10 @@ var gsUtils = {
           ) {
             gsTabDiscardManager.queueTabForDiscard(tab);
           }
+          return;
+        }
+
+        if (!gsUtils.isNormalTab(tab)) {
           return;
         }
 
@@ -687,15 +730,15 @@ var gsUtils = {
     });
 
     //if context menu has been disabled then remove from chrome
-    if (this.contains(changedSettingKeys, gsStorage.ADD_CONTEXT)) {
+    if (gsUtils.contains(changedSettingKeys, gsStorage.ADD_CONTEXT)) {
       var addContextMenu = gsStorage.getOption(gsStorage.ADD_CONTEXT);
       tgs.buildContextMenu(addContextMenu);
     }
 
     //if screenshot preferences have changed then update the queue parameters
     if (
-      this.contains(changedSettingKeys, gsStorage.SCREEN_CAPTURE) ||
-      this.contains(changedSettingKeys, gsStorage.SCREEN_CAPTURE_FORCE)
+      gsUtils.contains(changedSettingKeys, gsStorage.SCREEN_CAPTURE) ||
+      gsUtils.contains(changedSettingKeys, gsStorage.SCREEN_CAPTURE_FORCE)
     ) {
       gsTabSuspendManager.initAsPromised(); //async. unhandled promise
     }
@@ -818,8 +861,13 @@ var gsUtils = {
     });
   },
 
-  executeWithRetries: async function(promiseFn, fnArgsArray, maxRetries, retryWaitTime) {
-    const retryFn = async (retries) => {
+  executeWithRetries: async function(
+    promiseFn,
+    fnArgsArray,
+    maxRetries,
+    retryWaitTime
+  ) {
+    const retryFn = async retries => {
       try {
         return await promiseFn(...fnArgsArray);
       } catch (e) {

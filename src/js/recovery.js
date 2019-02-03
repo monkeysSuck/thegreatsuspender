@@ -3,7 +3,7 @@
   'use strict';
 
   try {
-    chrome.extension.getBackgroundPage().tgs.setViewGlobals(global, 'recovery');
+    chrome.extension.getBackgroundPage().tgs.setViewGlobals(global);
   } catch (e) {
     window.setTimeout(() => window.location.reload(), 1000);
     return;
@@ -154,7 +154,7 @@
     }
 
     var currentSuspendedTabs = currentTabs.filter(o =>
-      gsUtils.isSuspendedTab(o, true)
+      gsUtils.isSuspendedTab(o)
     );
     for (const suspendedTab of currentSuspendedTabs) {
       gsMessages.sendPingToTab(suspendedTab.id, function(error) {

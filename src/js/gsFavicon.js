@@ -4,17 +4,31 @@ var gsFavicon = (function() {
   'use strict';
 
   const GOOGLE_S2_URL = 'https://www.google.com/s2/favicons?domain_url=';
+  const FALLBACK_CHROME_FAVICON_META = {
+    favIconUrl: 'chrome://favicon/size/16@2x/tgsDefaultFavicon',
+    isDark: true,
+    normalisedDataUrl:
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAYklEQVQ4T2NkoBAwIuuPior6j8O8xmXLljVgk8MwYNmyZdgMfcjAwLAAmyFEGfDv3z9FJiamA9gMIcoAkKsiIiIUsBlClAHofkf2JkED0DWDAnrUgOEfBsRkTpzpgBjN6GoA24V1Efr1zoAAAAAASUVORK5CYII=',
+    transparentDataUrl:
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAaUlEQVQ4T2NkoBAwIuuPioqqx2YeExPTwSVLlhzAJodhwLJlyxrRDWVkZPzIyMh4AZshRBnAxsY28ffv3wnYDCHKAJCrEhISBLAZQpQB6H5H9iZBA9A1gwJ61IDhHwbEZE6c6YAYzehqAAmQeBHM42eMAAAAAElFTkSuQmCC',
+  };
+  const FALLBACK_TGS_FAVICON_META = {
+    favIconUrl: chrome.extension.getURL('img/ic_suspendy_16x16.png'),
+    isDark: false,
+    normalisedDataUrl:
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABNUlEQVQ4T2NkQAPqMz+sZ2RgDPjP8J+BkYERLPufgQHM+s/wf+3NdIEQZC0QFUhAY9aH1f//M4IVQTTBNYMMXHEjnT8SxYAt02qmMTAwZHYyp4AVv2YQBMsjmwwzBCQmzPAeLFf+dw5I2XTGLdNq/lvoq6I7hCj+iYu3GQahAZ+/fWfg5eIk3QugaJu0aDND+5z1DAvb8hjcbQxRDPn7/x9DQeschpv3nzBsnFbDwMnOxoASBv/+/2PQ8c5hePXxK4ObpR7Dsp5iFAO+//zF4JRQw3D70UuGW9unMgjx8aAaAFL9+OUbht1HzjOEetqAvbFh30mGKzceMBjrqTJ42hgx/Pz9m+Hnr98MfNxcYMMJxsLVO48ZyvsWMHQWxTNoq8hhhAtBAwiF5DAyAJyZCPkXh/x0AD8FpQXQTF64AAAAAElFTkSuQmCC',
+    transparentDataUrl:
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABNUlEQVQ4T2NkQANqMz6EMzEyavxjYGBggsrB2P8Z/1+/mSawClkLI7oB6jM/hP5nYNQCiYMMgGkG04z/r9xIE1iLYsCWaVXejIxMJu1MqWDxVwwCYBpmO4iN7BoRhg9g+cp/sxn+//93hnHr9Jp6Cz1VdIcQxT9x6TbDIDTg07cfDHxcHKR7ARRQExduZOiYs4FhYXseg4eNIYohfxj+MeQ3z2a49eAJw8bptQxcbGwMKGHwj+Efg7ZnNsOrT98Y3Cz0GJb3FqMY8O3XLwbH+GqGO49eMdzePpVBiI8H1QCQ6kev3jDsOXyeIcTTFuyNDftOMly+/oDBWF+FwcvGmOHHnz8Mv379YuDj4gIbTjAWrtx5wlDeO5+hszieQUdFDiNcCBpAKCSHiwGwzETIv9jkQZkJACgqnoPT5d2xAAAAAElFTkSuQmCC',
+  };
 
   const _defaultFaviconFingerprintById = {};
   let _defaultChromeFaviconMeta;
   let _defaultTgsFaviconMeta;
 
-  function initAsPromised() {
-    return new Promise(async function(resolve) {
-      await buildDefaultTgsFaviconMeta();
-      await buildDefaultChromeFaviconMeta();
-      resolve();
-    });
+  async function initAsPromised() {
+    await buildDefaultTgsFaviconMeta();
+    await buildDefaultChromeFaviconMeta();
+    gsUtils.log('gsFavicon', 'init successful');
   }
 
   async function buildDefaultChromeFaviconMeta() {
@@ -29,16 +43,17 @@ var gsFavicon = (function() {
         4,
         0
       );
-      addFaviconMetaToDefaultFingerprints(
-        _defaultChromeFaviconMeta,
-        'chromeFavicon'
-      );
     } catch (e) {
       gsUtils.warning('gsFavicon', e);
     }
     if (!_defaultChromeFaviconMeta) {
       gsUtils.warning('gsFavicon', 'Failed to build _defaultChromeFaviconMeta');
+      _defaultChromeFaviconMeta = FALLBACK_CHROME_FAVICON_META;
     }
+    addFaviconMetaToDefaultFingerprints(
+      _defaultChromeFaviconMeta,
+      'chromeFavicon'
+    );
   }
 
   async function buildDefaultTgsFaviconMeta() {
@@ -50,13 +65,14 @@ var gsFavicon = (function() {
         4,
         0
       );
-      addFaviconMetaToDefaultFingerprints(_defaultTgsFaviconMeta, 'tgsFavicon');
     } catch (e) {
       gsUtils.warning('gsFavicon', e);
     }
     if (!_defaultTgsFaviconMeta) {
       gsUtils.warning('gsFavicon', 'Failed to build _defaultTgsFaviconMeta');
+      _defaultTgsFaviconMeta = FALLBACK_TGS_FAVICON_META;
     }
+    addFaviconMetaToDefaultFingerprints(_defaultTgsFaviconMeta, 'tgsFavicon');
   }
 
   async function addFaviconMetaToDefaultFingerprints(faviconMeta, id) {
@@ -84,11 +100,11 @@ var gsFavicon = (function() {
     }
     let faviconMeta = await getCachedFaviconMetaData(originalUrl);
     if (faviconMeta) {
-      gsUtils.log(
-        tab.id,
-        'Found favicon cache hit for url: ' + originalUrl,
-        faviconMeta
-      );
+      // gsUtils.log(
+      //   tab.id,
+      //   'Found favicon cache hit for url: ' + originalUrl,
+      //   faviconMeta
+      // );
       return faviconMeta;
     }
 
@@ -171,19 +187,25 @@ var gsFavicon = (function() {
   }
 
   async function getCachedFaviconMetaData(url) {
-    const rootUrl = gsUtils.getRootUrl(url, false, true);
-    const faviconMetaData = await gsIndexedDb.fetchFaviconMeta(rootUrl);
+    const fullUrl = gsUtils.getRootUrl(url, true, false);
+    let faviconMetaData = await gsIndexedDb.fetchFaviconMeta(fullUrl);
+    if (!faviconMetaData) {
+      const rootUrl = gsUtils.getRootUrl(url, false, false);
+      faviconMetaData = await gsIndexedDb.fetchFaviconMeta(rootUrl);
+    }
     return faviconMetaData || null;
   }
 
   async function saveFaviconMetaDataToCache(url, faviconMeta) {
-    const rootUrl = gsUtils.getRootUrl(url, false, true);
+    const fullUrl = gsUtils.getRootUrl(url, true, false);
+    const rootUrl = gsUtils.getRootUrl(url, false, false);
     gsUtils.log(
       'gsFavicon',
-      'Saving favicon cache entry for: ' + rootUrl,
+      'Saving favicon cache entry for: ' + fullUrl,
       faviconMeta
     );
-    await gsIndexedDb.addFaviconMeta(rootUrl, faviconMeta);
+    await gsIndexedDb.addFaviconMeta(fullUrl, Object.assign({}, faviconMeta));
+    await gsIndexedDb.addFaviconMeta(rootUrl, Object.assign({}, faviconMeta));
   }
 
   // dont use this function as it causes rate limit issues
@@ -192,7 +214,7 @@ var gsFavicon = (function() {
     return new Promise(resolve => {
       let imageLoaded = false;
 
-      const rootUrl = encodeURIComponent(gsUtils.getRootUrl(url));
+      const rootUrl = gsUtils.encodeString(gsUtils.getRootUrl(url));
       const requestUrl = GOOGLE_S2_URL + rootUrl;
 
       const xmlHTTP = new XMLHttpRequest();
@@ -201,7 +223,7 @@ var gsFavicon = (function() {
       xmlHTTP.responseType = 'arraybuffer';
       xmlHTTP.onload = function(e) {
         imageLoaded = true;
-        const arr = new Uint8Array(this.response);
+        const arr = new Uint8Array(xmlHTTP.response);
         const raw = String.fromCharCode.apply(null, arr);
         const b64 = btoa(raw);
         const dataUrl = 'data:image/png;base64,' + b64;
@@ -286,9 +308,14 @@ var gsFavicon = (function() {
     const timeout = 5 * 1000;
     return new Promise((resolve, reject) => {
       const img = new Image();
+      // 12-16-2018 ::: @CollinChaffin ::: Anonymous declaration required to prevent terminating cross origin security errors
+      // 12-16-2018 ::: @CollinChaffin ::: http://bit.ly/2BolEqx
+      // 12-16-2018 ::: @CollinChaffin ::: https://bugs.chromium.org/p/chromium/issues/detail?id=409090#c23
+      // 12-16-2018 ::: @CollinChaffin ::: https://bugs.chromium.org/p/chromium/issues/detail?id=718352#c10
+      img.crossOrigin = 'Anonymous';
       let imageLoaded = false;
 
-      img.onload = async function() {
+      img.onload = () => {
         imageLoaded = true;
 
         let canvas;
@@ -299,12 +326,13 @@ var gsFavicon = (function() {
         context = canvas.getContext('2d');
         context.drawImage(img, 0, 0);
 
-        const imageData = context.getImageData(
-          0,
-          0,
-          canvas.width,
-          canvas.height
-        );
+        let imageData;
+        try {
+          imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        } catch (e) {
+          reject(e);
+          return;
+        }
 
         const origDataArray = imageData.data;
         const normalisedDataArray = new Uint8ClampedArray(origDataArray);
