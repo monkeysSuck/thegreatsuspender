@@ -1,4 +1,4 @@
-/*global chrome, gsAnalytics, gsStorage, gsUtils */
+/*global chrome, gsAnalytics, gsStorage, gsChrome, gsUtils */
 (function(global) {
   try {
     chrome.extension.getBackgroundPage().tgs.setViewGlobals(global);
@@ -198,6 +198,39 @@
         element.onchange = handleChange(element);
       }
     }
+
+    document.getElementById('testWhitelistBtn').onclick = async e => {
+      e.preventDefault();
+      const tabs = await gsChrome.tabsQuery();
+      const tabUrls = tabs
+        .map(
+          tab =>
+            gsUtils.isSuspendedTab(tab)
+              ? gsUtils.getOriginalUrl(tab.url)
+              : tab.url
+        )
+        .filter(
+          url => !gsUtils.isSuspendedUrl(url) && gsUtils.checkWhiteList(url)
+        )
+        .map(url => (url.length > 55 ? url.substr(0, 52) + '...' : url));
+      if (tabUrls.length === 0) {
+        alert(chrome.i18n.getMessage('js_options_whitelist_no_matches'));
+        return;
+      }
+      const firstUrls = tabUrls.splice(0, 22);
+      let alertString = `${chrome.i18n.getMessage(
+        'js_options_whitelist_matches_heading'
+      )}\n${firstUrls.join('\n')}`;
+
+      if (tabUrls.length > 0) {
+        alertString += `\n${chrome.i18n.getMessage(
+          'js_options_whitelist_matches_overflow_prefix'
+        )} ${tabUrls.length} ${chrome.i18n.getMessage(
+          'js_options_whitelist_matches_overflow_suffix'
+        )}`;
+      }
+      alert(alertString);
+    };
 
     //hide incompatible sidebar items if in incognito mode
     if (chrome.extension.inIncognitoContext) {

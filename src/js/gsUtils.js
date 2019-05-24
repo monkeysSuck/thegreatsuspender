@@ -140,7 +140,8 @@ var gsUtils = {
     if (
       url.indexOf('about') === 0 ||
       url.indexOf('chrome') === 0 ||
-      url.indexOf('chrome.google.com/webstore') >= 0 ||
+      // webstore urls no longer seem to crash the extension :D
+      // url.indexOf('chrome.google.com/webstore') >= 0 ||
       gsUtils.isBlockedFileTab(tab)
     ) {
       return true;
@@ -191,8 +192,13 @@ var gsUtils = {
   },
 
   // Note: Normal tabs may be in a discarded state
-  isNormalTab: function(tab) {
-    return !gsUtils.isSpecialTab(tab) && !gsUtils.isSuspendedTab(tab, true);
+  isNormalTab: function(tab, excludeDiscarded) {
+    excludeDiscarded = excludeDiscarded || false;
+    return (
+      !gsUtils.isSpecialTab(tab) &&
+      !gsUtils.isSuspendedTab(tab, true) &&
+      (!excludeDiscarded || !gsUtils.isDiscardedTab(tab))
+    );
   },
 
   isSuspendedTab: function(tab, looseMatching) {
@@ -218,13 +224,9 @@ var gsUtils = {
   },
 
   removeTabsByUrlAsPromised: function(url) {
-    return new Promise(resolve => {
-      chrome.tabs.query({ url }, function(tabs) {
-        chrome.tabs.remove(
-          tabs.map(function(tab) {
-            return tab.id;
-          })
-        );
+    return new Promise(async resolve => {
+      const tabs = await gsChrome.tabsQuery({ url });
+      chrome.tabs.remove(tabs.map(o => o.id), () => {
         resolve();
       });
     });
@@ -507,7 +509,7 @@ var gsUtils = {
       gsUtils.decodeString(gsUtils.getHashVariable('url', urlStr) || '')
     );
   },
-  getCleanTabTitle(tab) {
+  getCleanTabTitle: function(tab) {
     let cleanedTitle = gsUtils.decodeString(tab.title);
     if (
       !cleanedTitle ||
@@ -524,19 +526,32 @@ var gsUtils = {
     }
     return cleanedTitle;
   },
-  decodeString(string) {
+  decodeString: function(string) {
     try {
       return decodeURIComponent(string);
     } catch (e) {
       return string;
     }
   },
-  encodeString(string) {
+  encodeString: function(string) {
     try {
       return encodeURIComponent(string);
     } catch (e) {
       return string;
     }
+  },
+
+  formatHotkeyString: function(hotkeyString) {
+    return hotkeyString
+      .replace(/Command/, '⌘')
+      .replace(/[⌘\u2318]/, ' ⌘ ')
+      .replace(/[⇧\u21E7]/, ' Shift ')
+      .replace(/[⌃\u8963]/, ' Ctrl ')
+      .replace(/[⌥\u8997]/, ' Option ')
+      .replace(/\+/g, ' ')
+      .replace(/ +/g, ' ')
+      .trim()
+      .replace(/[ ]/g, ' \u00B7 ');
   },
 
   getSuspendedTabCount: async function() {
@@ -663,7 +678,7 @@ var gsUtils = {
           return;
         }
 
-        if (!gsUtils.isNormalTab(tab)) {
+        if (!gsUtils.isNormalTab(tab, true)) {
           return;
         }
 

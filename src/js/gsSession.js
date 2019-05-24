@@ -4,8 +4,9 @@ var gsSession = (function() {
   'use strict';
 
   const tabsToRestorePerSecond = 12;
-  const updateUrl = chrome.extension.getURL('update.html');
-  const updatedUrl = chrome.extension.getURL('updated.html');
+
+  let updateUrl;
+  let updatedUrl;
 
   let initialisationMode = true;
   let sessionId;
@@ -20,6 +21,9 @@ var gsSession = (function() {
   let syncedSettingsOnInit;
 
   async function initAsPromised() {
+    updateUrl = chrome.extension.getURL('update.html');
+    updatedUrl = chrome.extension.getURL('updated.html');
+
     // Set fileUrlsAccessAllowed to determine if extension can work on file:// URLs
     await new Promise(r => {
       chrome.extension.isAllowedFileSchemeAccess(isAllowedAccess => {
@@ -63,6 +67,8 @@ var gsSession = (function() {
     if (!sessionRestorePoint || suspendedTabCount > 0) {
       //show update screen
       await gsChrome.tabsCreate(updateUrl);
+      //ensure we don't leave any windows with no unsuspended tabs
+      await unsuspendActiveTabInEachWindow();
     } else {
       // if there are no suspended tabs then simply install the update immediately
       chrome.runtime.reload();
@@ -148,7 +154,10 @@ var gsSession = (function() {
     gsUtils.log('gsSession', 'preRecovery open tabs:', currentSessionTabs);
 
     const curVersion = chrome.runtime.getManifest().version;
+    gsUtils.log('gsSession', 'curVersion:', curVersion);
+
     startupLastVersion = gsStorage.fetchLastVersion();
+    gsUtils.log('gsSession', 'startupLastVersion:', startupLastVersion);
 
     if (chrome.extension.inIncognitoContext) {
       // do nothing if in incognito context
@@ -167,11 +176,15 @@ var gsSession = (function() {
       await handleUpdate(currentSessionTabs, curVersion, startupLastVersion);
     }
 
-    const disableTabChecks = gsStorage.getOption(gsStorage.DISABLE_TAB_CHECKS);
-    if (!disableTabChecks) {
-      await performTabChecks();
-    } else {
-      gsUtils.log('Skipping tabChecks due to disableTabChecks flag.');
+    await performTabChecks();
+
+    // Ensure currently focused tab is initialised correctly if suspended
+    const currentWindowActiveTabs = await gsChrome.tabsQuery({
+      active: true,
+      currentWindow: true,
+    });
+    if (currentWindowActiveTabs.length > 0) {
+      gsTabCheckManager.queueTabCheck(currentWindowActiveTabs[0]);
     }
 
     gsUtils.log('gsSession', 'updating current session');
@@ -202,18 +215,8 @@ var gsSession = (function() {
     );
     const totalTabCheckCount = tabCheckResults.length;
     const successfulTabChecksCount = tabCheckResults.filter(
-      o => o === gsUtils.STATUS_SUSPENDED
+      o => o === gsUtils.STATUS_SUSPENDED || o === gsUtils.STATUS_DISCARDED
     ).length;
-
-    // If we want to discard tabs after suspending them
-    let discardAfterSuspend = gsStorage.getOption(
-      gsStorage.DISCARD_AFTER_SUSPEND
-    );
-    if (discardAfterSuspend) {
-      await gsTabDiscardManager.performInitialisationTabDiscards(
-        postRecoverySessionTabs
-      );
-    }
 
     startupTabCheckTimeTakenInSeconds = parseInt(
       (Date.now() - initStartTime) / 1000
@@ -796,6 +799,21 @@ var gsSession = (function() {
     return sessionMetrics;
   }
 
+  async function unsuspendActiveTabInEachWindow() {
+    const activeTabs = await gsChrome.tabsQuery({ active: true });
+    const suspendedActiveTabs = activeTabs.filter(tab =>
+      gsUtils.isSuspendedTab(tab)
+    );
+    if (suspendedActiveTabs.length === 0) {
+      return;
+    }
+    for (let suspendedActiveTab of suspendedActiveTabs) {
+      tgs.unsuspendTab(suspendedActiveTab);
+    }
+    await gsUtils.setTimeout(1000);
+    await unsuspendActiveTabInEachWindow();
+  }
+
   return {
     initAsPromised,
     runStartupChecks,
@@ -816,5 +834,6 @@ var gsSession = (function() {
     prepareForUpdate,
     getUpdateType,
     updateSessionMetrics,
+    unsuspendActiveTabInEachWindow,
   };
 })();

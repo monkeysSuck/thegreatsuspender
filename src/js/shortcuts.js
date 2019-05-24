@@ -26,17 +26,15 @@
         if (command.name !== '_execute_browser_action') {
           const shortcut =
             command.shortcut !== ''
-              ? command.shortcut
+              ? gsUtils.formatHotkeyString(command.shortcut)
               : '(' + notSetMessage + ')';
-          var removeMargin = !groupingKeys.includes(command.name);
-          var style = removeMargin
-            ? '"margin: 0 0 2px;"'
-            : '"margin: 0 0 20px;"';
-          shortcutsEl.innerHTML += `<div style=${style}>${
-            command.description
-          }</div>
-            <div${!command.shortcut &&
-              ' class="lesserText"'}>${shortcut}</div>`;
+          var addMarginBottom = groupingKeys.includes(command.name);
+          shortcutsEl.innerHTML += `<div ${
+            addMarginBottom ? ' class="bottomMargin"' : ''
+          }>${command.description}</div>
+            <div class="${
+              command.shortcut ? 'hotkeyCommand' : 'lesserText'
+            }">${shortcut}</div>`;
         }
       });
     });

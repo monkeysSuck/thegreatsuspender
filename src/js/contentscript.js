@@ -14,10 +14,6 @@
   let isIgnoreForms = false;
   let tempWhitelist = false;
 
-  function suspendTab(suspendedUrl) {
-    window.location.replace(suspendedUrl);
-  }
-
   function formInputListener(e) {
     if (!isReceivingFormInput && !tempWhitelist) {
       if (event.keyCode >= 48 && event.keyCode <= 90 && event.target.tagName) {
@@ -25,7 +21,8 @@
           event.target.tagName.toUpperCase() === 'INPUT' ||
           event.target.tagName.toUpperCase() === 'TEXTAREA' ||
           event.target.tagName.toUpperCase() === 'FORM' ||
-          event.target.isContentEditable === true
+          event.target.isContentEditable === true ||
+          event.target.type === "application/pdf"
         ) {
           isReceivingFormInput = true;
           if (!isBackgroundConnectable()) {
@@ -53,11 +50,6 @@
       sendResponse
     ) {
       if (request.hasOwnProperty('action')) {
-        if (request.action === 'confirmTabSuspend' && request.suspendedUrl) {
-          sendResponse();
-          suspendTab(request.suspendedUrl);
-          return false;
-        }
         if (request.action === 'requestInfo') {
           sendResponse(buildReportTabStatePayload());
           return false;
@@ -105,12 +97,16 @@
   }
 
   function isBackgroundConnectable() {
-    var port = chrome.runtime.connect();
-    if (port) {
-      port.disconnect();
-      return true;
+    try {
+      var port = chrome.runtime.connect();
+      if (port) {
+        port.disconnect();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
     }
-    return false;
   }
 
   function buildReportTabStatePayload() {

@@ -1,37 +1,54 @@
-/*global tgs, gsFavicon, gsStorage, gsUtils, gsIndexedDb */
+/*global tgs, gsFavicon, gsStorage, gsSession, gsUtils, gsIndexedDb */
 // eslint-disable-next-line no-unused-vars
 var gsSuspendedTab = (function() {
   'use strict';
 
-  async function initTab(tab, tabView) {
+  async function initTab(tab, tabView, { showNag, quickInit }) {
     if (!tabView) {
       gsUtils.warning(
         tab.id,
         'Could not get internalTabView for suspended tab'
       );
     }
+    const suspendedUrl = tab.url;
+
+    // Set sessionId for subsequent checks
+    tabView.document.sessionId = gsSession.getSessionId();
+
+    // Set title
+    let title = gsUtils.getSuspendedTitle(suspendedUrl);
+    if (title.indexOf('<') >= 0) {
+      // Encode any raw html tags that might be used in the title
+      title = gsUtils.htmlEncode(title);
+    }
+    setTitle(tabView.document, title);
+
+    // Set faviconMeta
+    const faviconMeta = await gsFavicon.getFaviconMetaData(tab);
+    setFaviconMeta(tabView.document, faviconMeta);
+
+    if (quickInit) {
+      return;
+    }
 
     gsUtils.localiseHtml(tabView.document);
 
     const options = gsStorage.getSettings();
-    const suspendedUrl = tab.url;
     const originalUrl = gsUtils.getOriginalUrl(suspendedUrl);
 
-    // Set unloadTabHandler
+    // Add event listeners
     setUnloadTabHandler(tabView.window, tab);
+    setUnsuspendTabHandlers(tabView.document, tab);
 
     // Set imagePreview
     const previewMode = options[gsStorage.SCREEN_CAPTURE];
     const previewUri = await getPreviewUri(suspendedUrl);
     await toggleImagePreviewVisibility(
       tabView.document,
+      tab,
       previewMode,
       previewUri
     );
-
-    // Set faviconMeta
-    const faviconMeta = await gsFavicon.getFaviconMetaData(tab);
-    setFaviconMeta(tabView.document, faviconMeta);
 
     // Set theme
     const theme = options[gsStorage.THEME];
@@ -39,7 +56,6 @@ var gsSuspendedTab = (function() {
     setTheme(tabView.document, theme, isLowContrastFavicon);
 
     // Set showNag
-    let showNag = tgs.getTabStatePropForTabId(tab.id, tgs.STATE_SHOW_NAG);
     if (
       !options[gsStorage.NO_NAG] &&
       (showNag === undefined || showNag === null)
@@ -56,14 +72,6 @@ var gsSuspendedTab = (function() {
     // Set command
     const suspensionToggleHotkey = await tgs.getSuspensionToggleHotkey();
     setCommand(tabView.document, suspensionToggleHotkey);
-
-    // Set title
-    let title = gsUtils.getSuspendedTitle(suspendedUrl);
-    if (title.indexOf('<') >= 0) {
-      // Encode any raw html tags that might be used in the title
-      title = gsUtils.htmlEncode(title);
-    }
-    setTitle(tabView.document, title);
 
     // Set url
     setUrl(tabView.document, originalUrl);
@@ -86,13 +94,7 @@ var gsSuspendedTab = (function() {
     const scrollPosition = gsUtils.getSuspendedScrollPosition(suspendedUrl);
     setScrollPosition(tabView.document, scrollPosition, previewMode);
     tgs.setTabStatePropForTabId(tab.id, tgs.STATE_SCROLL_POS, scrollPosition);
-
     // const whitelisted = gsUtils.checkWhiteList(originalUrl);
-  }
-
-  function requestUnsuspendTab(tabView, tab) {
-    const originalUrl = gsUtils.getOriginalUrl(tab.url);
-    unsuspendTab(tabView.document, originalUrl);
   }
 
   function showNoConnectivityMessage(tabView) {
@@ -119,14 +121,12 @@ var gsSuspendedTab = (function() {
     const previewUri = await getPreviewUri(tab.url);
     await toggleImagePreviewVisibility(
       tabView.document,
+      tab,
       previewMode,
       previewUri
     );
 
-    const scrollPosition = tgs.getTabStatePropForTabId(
-      tab.id,
-      tgs.STATE_SCROLL_POS
-    );
+    const scrollPosition = gsUtils.getSuspendedScrollPosition(tab.url);
     setScrollPosition(tabView.document, scrollPosition, previewMode);
   }
 
@@ -135,10 +135,12 @@ var gsSuspendedTab = (function() {
   }
 
   function setScrollPosition(_document, scrollPosition, previewMode) {
+    const scrollPosAsInt = (scrollPosition && parseInt(scrollPosition)) || 0;
     const scrollImagePreview = previewMode === '2';
-    if (scrollImagePreview && scrollPosition) {
-      _document.body.scrollTop = scrollPosition || 0;
-      _document.documentElement.scrollTop = scrollPosition || 0;
+    if (scrollImagePreview && scrollPosAsInt > 15) {
+      const offsetScrollPosition = scrollPosAsInt + 151;
+      _document.body.scrollTop = offsetScrollPosition;
+      _document.documentElement.scrollTop = offsetScrollPosition;
     } else {
       _document.body.scrollTop = 0;
       _document.documentElement.scrollTop = 0;
@@ -146,6 +148,7 @@ var gsSuspendedTab = (function() {
   }
 
   function setTitle(_document, title) {
+    _document.title = title;
     _document.getElementById('gsTitle').innerHTML = title;
     _document.getElementById('gsTopBarTitle').innerHTML = title;
     // Prevent unsuspend by parent container
@@ -162,10 +165,6 @@ var gsSuspendedTab = (function() {
     _document.getElementById('gsTopBarUrl').onmousedown = function(e) {
       e.stopPropagation();
     };
-    const unsuspendTabHandler = buildUnsuspendTabHandler(_document);
-    _document.getElementById('gsTopBarUrl').onclick = unsuspendTabHandler;
-    _document.getElementById('gsTopBar').onmousedown = unsuspendTabHandler;
-    _document.getElementById('suspendedMsg').onclick = unsuspendTabHandler;
   }
 
   function setFaviconMeta(_document, faviconMeta) {
@@ -254,7 +253,7 @@ var gsSuspendedTab = (function() {
     return previewUri;
   }
 
-  function buildImagePreview(_document, previewUri) {
+  function buildImagePreview(_document, tab, previewUri) {
     return new Promise(resolve => {
       const previewEl = _document.createElement('div');
       const bodyEl = _document.getElementsByTagName('body')[0];
@@ -263,7 +262,7 @@ var gsSuspendedTab = (function() {
       previewEl.innerHTML = _document.getElementById(
         'previewTemplate'
       ).innerHTML;
-      const unsuspendTabHandler = buildUnsuspendTabHandler(_document);
+      const unsuspendTabHandler = buildUnsuspendTabHandler(_document, tab);
       previewEl.onclick = unsuspendTabHandler;
       gsUtils.localiseHtml(previewEl);
       bodyEl.appendChild(previewEl);
@@ -288,6 +287,7 @@ var gsSuspendedTab = (function() {
 
   async function toggleImagePreviewVisibility(
     _document,
+    tab,
     previewMode,
     previewUri
   ) {
@@ -299,23 +299,23 @@ var gsSuspendedTab = (function() {
       previewMode &&
       previewMode !== '0'
     ) {
-      await buildImagePreview(_document, previewUri);
+      await buildImagePreview(_document, tab, previewUri);
     } else {
       addWatermarkHandler(_document);
     }
 
-    if (!_document.getElementById('gsPreview')) {
+    if (!_document.getElementById('gsPreviewContainer')) {
       return;
     }
     const overflow = previewMode === '2' ? 'auto' : 'hidden';
     _document.body.style['overflow'] = overflow;
 
     if (previewMode === '0' || !previewUri) {
-      _document.getElementById('gsPreview').style.display = 'none';
+      _document.getElementById('gsPreviewContainer').style.display = 'none';
       _document.getElementById('suspendedMsg').style.display = 'flex';
       _document.body.classList.remove('img-preview-mode');
     } else {
-      _document.getElementById('gsPreview').style.display = 'block';
+      _document.getElementById('gsPreviewContainer').style.display = 'block';
       _document.getElementById('suspendedMsg').style.display = 'none';
       _document.body.classList.add('img-preview-mode');
     }
@@ -335,30 +335,46 @@ var gsSuspendedTab = (function() {
   }
 
   function setUnloadTabHandler(_window, tab) {
-    // beforeunload event will get fired if: the tab is refreshed, the url is changed, or the tab is closed.
+    // beforeunload event will get fired if: the tab is refreshed, the url is changed,
+    // the tab is closed, or the tab is frozen by chrome ??
     // when this happens the STATE_UNLOADED_URL gets set with the suspended tab url
     // if the tab is refreshed, then on reload the url will match and the tab will unsuspend
     // if the url is changed then on reload the url will not match
     // if the tab is closed, the reload will never occur
     _window.addEventListener('beforeunload', function(e) {
-      tgs.setTabStatePropForTabId(tab.id, tgs.STATE_UNLOADED_URL, tab.url);
+      gsUtils.log(tab.id, 'BeforeUnload triggered: ' + tab.url);
+      if (tgs.isCurrentFocusedTab(tab)) {
+        tgs.setTabStatePropForTabId(tab.id, tgs.STATE_UNLOADED_URL, tab.url);
+      } else {
+        gsUtils.log(
+          tab.id,
+          'Ignoring beforeUnload as tab is not currently focused.'
+        );
+      }
     });
   }
 
-  function buildUnsuspendTabHandler(_document) {
-    const originalUrl = gsUtils.getOriginalUrl(_document.location.href);
+  function setUnsuspendTabHandlers(_document, tab) {
+    const unsuspendTabHandler = buildUnsuspendTabHandler(_document, tab);
+    _document.getElementById('gsTopBarUrl').onclick = unsuspendTabHandler;
+    _document.getElementById('gsTopBar').onmousedown = unsuspendTabHandler;
+    _document.getElementById('suspendedMsg').onclick = unsuspendTabHandler;
+  }
+
+  function buildUnsuspendTabHandler(_document, tab) {
     return function(e) {
       e.preventDefault();
       e.stopPropagation();
       if (e.target.id === 'setKeyboardShortcut') {
         chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
       } else if (e.which === 1) {
-        unsuspendTab(_document, originalUrl);
+        showUnsuspendAnimation(_document);
+        tgs.unsuspendTab(tab);
       }
     };
   }
 
-  function unsuspendTab(_document, originalUrl) {
+  function showUnsuspendAnimation(_document) {
     if (_document.body.classList.contains('img-preview-mode')) {
       _document.getElementById('refreshSpinner').classList.add('spinner');
     } else {
@@ -368,7 +384,6 @@ var gsSuspendedTab = (function() {
       );
       _document.getElementById('snoozySpinner').classList.add('spinner');
     }
-    _document.location.replace(originalUrl);
   }
 
   function loadToastTemplate(_document) {
@@ -456,7 +471,6 @@ var gsSuspendedTab = (function() {
 
   return {
     initTab,
-    requestUnsuspendTab,
     showNoConnectivityMessage,
     updateCommand,
     updateTheme,
